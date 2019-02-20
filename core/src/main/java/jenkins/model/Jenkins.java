@@ -106,6 +106,8 @@ import hudson.model.UpdateCenter;
 import hudson.model.User;
 import hudson.model.View;
 import hudson.model.ViewGroupMixIn;
+import hudson.model.ViewGroup;
+import hudson.model.ViewGroupDelegate;
 import hudson.model.WorkspaceCleanupThread;
 import hudson.model.labels.LabelAtom;
 import hudson.model.listeners.ItemListener;
@@ -547,7 +549,15 @@ public class Jenkins extends AbstractCIBase implements DirectlyModifiableTopLeve
      */
     private volatile String primaryView;
 
-    private transient final ViewGroupMixIn viewGroupMixIn = new ViewGroupMixIn(this) {
+    private transient final ViewGroup viewGroupDelegate = new ViewGroupDelegate(this) {
+        @Override
+        public void save() throws IOException {
+            getViewsConfigFile().write(views);
+            SaveableListener.fireOnChange(this, getViewsConfigFile());
+        }
+    };
+
+    private transient final ViewGroupMixIn viewGroupMixIn = new ViewGroupMixIn(viewGroupDelegate) {
         protected List<View> views() { return views; }
         protected String primaryView() { return primaryView; }
         protected void primaryView(String name) { primaryView=name; }
@@ -2979,6 +2989,10 @@ public class Jenkins extends AbstractCIBase implements DirectlyModifiableTopLeve
         return new XmlFile(XSTREAM, new File(root,"config.xml"));
     }
 
+    private XmlFile getViewsConfigFile() {
+        return new XmlFile(VIEWSXSTREAM, new File(root, "views.xml"));
+    }
+
     public int getNumExecutors() {
         return numExecutors;
     }
@@ -3015,14 +3029,22 @@ public class Jenkins extends AbstractCIBase implements DirectlyModifiableTopLeve
 
     private void loadConfig() throws IOException {
         XmlFile cfg = getConfigFile();
+        XmlFile viewsCfg = getViewsConfigFile();
+
         if (cfg.exists()) {
             // reset some data that may not exist in the disk file
             // so that we can take a proper compensation action later.
             primaryView = null;
-            views.clear();
 
             // load from disk
             cfg.unmarshal(Jenkins.this);
+        }
+
+        if (viewsCfg.exists()) {
+            views.clear();
+
+            viewsCfg.unmarshal(views);
+            views.forEach(v -> v.setOwner(viewGroupDelegate));
         }
 
         try {
@@ -3240,6 +3262,7 @@ public class Jenkins extends AbstractCIBase implements DirectlyModifiableTopLeve
 
         getConfigFile().write(this);
         SaveableListener.fireOnChange(this, getConfigFile());
+        viewGroupDelegate.save();
     }
 
     private void saveQuietly() {
@@ -4949,6 +4972,8 @@ public class Jenkins extends AbstractCIBase implements DirectlyModifiableTopLeve
      */
     public static final XStream XSTREAM;
 
+    public static final XStream2 VIEWSXSTREAM;
+
     /**
      * Alias to {@link #XSTREAM} so that one can access additional methods on {@link XStream2} more easily.
      */
@@ -5205,6 +5230,8 @@ public class Jenkins extends AbstractCIBase implements DirectlyModifiableTopLeve
             ANONYMOUS = new AnonymousAuthenticationToken(
                     "anonymous", "anonymous", new GrantedAuthority[]{new GrantedAuthorityImpl("anonymous")});
             XSTREAM = XSTREAM2 = new XStream2();
+            VIEWSXSTREAM = new XStream2();
+            VIEWSXSTREAM.omitField(View.class, "owner");
 
             XSTREAM.alias("jenkins", Jenkins.class);
             XSTREAM.alias("slave", DumbSlave.class);
@@ -5212,6 +5239,7 @@ public class Jenkins extends AbstractCIBase implements DirectlyModifiableTopLeve
             // for backward compatibility with <1.75, recognize the tag name "view" as well.
             XSTREAM.alias("view", ListView.class);
             XSTREAM.alias("listView", ListView.class);
+            XSTREAM.omitField(Jenkins.class, "views");
             XSTREAM.addImplicitArray(Jenkins.class, "_disabledAgentProtocols", "disabledAgentProtocol");
             XSTREAM.addImplicitArray(Jenkins.class, "_enabledAgentProtocols", "enabledAgentProtocol");
             XSTREAM2.addCriticalField(Jenkins.class, "securityRealm");

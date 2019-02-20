@@ -266,6 +266,10 @@ public abstract class View extends AbstractModelObject implements AccessControll
         return owner;
     }
 
+    public void setOwner(ViewGroup owner) {
+        this.owner = owner;
+    }
+
     /** @deprecated call {@link ViewGroup#getItemGroup} directly */
     @Deprecated
     public ItemGroup<? extends TopLevelItem> getOwnerItemGroup() {
@@ -1211,7 +1215,7 @@ public abstract class View extends AbstractModelObject implements AccessControll
             // view in same ViewGroup and might not satisfy Jenkins.checkGoodName.
             String oldname = name;
             ViewGroup oldOwner = owner; // oddly, this field is not transient
-            Object o = Jenkins.XSTREAM2.unmarshal(XStream2.getDefaultDriver().createReader(in), this, null, true);
+            Object o = Jenkins.VIEWSXSTREAM.unmarshal(XStream2.getDefaultDriver().createReader(in), this, null, true);
             if (!o.getClass().equals(getClass())) {
                 // ensure that we've got the same view type. extending this code to support updating
                 // to different view type requires destroying & creating a new view type
@@ -1357,7 +1361,7 @@ public abstract class View extends AbstractModelObject implements AccessControll
             else
                 throw new Failure("No such view: "+from);
         }
-        String xml = Jenkins.XSTREAM.toXML(src);
+        String xml = Jenkins.VIEWSXSTREAM.toXML(src);
         v = createViewFromXML(name, new StringInputStream(xml));
         return v;
     }
@@ -1370,7 +1374,7 @@ public abstract class View extends AbstractModelObject implements AccessControll
     public static View createViewFromXML(String name, InputStream xml) throws IOException {
 
         try (InputStream in = new BufferedInputStream(xml)) {
-            View v = (View) Jenkins.XSTREAM.fromXML(in);
+            View v = (View) Jenkins.VIEWSXSTREAM.fromXML(in);
             if (name != null) v.name = name;
             Jenkins.checkGoodName(v.name);
             return v;
